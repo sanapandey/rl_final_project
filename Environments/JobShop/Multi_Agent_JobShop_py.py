@@ -38,10 +38,13 @@ class Multi_Agent_JobShop_py(object):
         self.debug = debug
       
         # Per-agent action space (scalar): a_i ∈ [0, n_jobs]
-        self.action_space = Space(size=n_jobs, low=0.0, high=float(n_jobs), dtype=np.float32)
+        self.action_space = Space(low=np.array([0.0], dtype=np.float32), 
+                                 high=np.array([float(n_jobs)], dtype=np.float32), 
+                                 dtype=np.float32)
         # Per-agent observation space: [e_i, w_i, queue_length_i, global_avg_load]
         self.observation_space = Space(low=np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32), 
-                                     high=np.array([self.max_energy_usage, 5.0, float(n_jobs), float(n_jobs)], dtype=np.float32))
+                                     high=np.array([self.max_energy_usage, 5.0, float(n_jobs), float(n_jobs)], dtype=np.float32),
+                                     dtype=np.float32)
 
         self.action_space_matrix = []
         
@@ -105,6 +108,7 @@ class Multi_Agent_JobShop_py(object):
             job_counts.append(jobs)
         
         # Calculate global reward components
+        job_counts = np.array(job_counts)  # Convert to numpy array
         load_imbalance = np.std(job_counts)  # Penalty for uneven load
         avg_load = np.mean(job_counts)
         idle_penalty = np.sum(np.maximum(0, 0.1 * self.max_jobs_per_machine - job_counts))  # Penalty for idle machines

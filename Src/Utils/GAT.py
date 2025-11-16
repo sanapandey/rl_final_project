@@ -75,17 +75,26 @@ class GraphAttentionLayer(NeuralNet):
         
         # Softmax over neighbors
         attention_weights = F.softmax(attention_scores, dim=1)  # (n_agents, n_agents, batch_size)
-        attention_weights = F.dropout(attention_weights, self.dropout, training=self.training)
+        # Apply dropout before aggregation (but keep structure for testing)
+        if self.training:
+            attention_weights = F.dropout(attention_weights, self.dropout, training=True)
         
         # Aggregate messages: z_i^(t+1) = σ(Σ_j α_ij W z_j)
+        # h: (n_agents, batch_size, out_features)
+        # attention_weights: (n_agents, n_agents, batch_size)
+        # For each agent i, we want: sum_j (alpha_ij * h_j) over all neighbors j
         h_updated = []
         for i in range(n_agents):
-            # Weighted sum of neighbors' transformed embeddings
+            # Get attention weights for agent i: (n_agents, batch_size)
             alpha_i = attention_weights[i]  # (n_agents, batch_size)
-            h_weighted = torch.sum(alpha_i.unsqueeze(-1) * h, dim=0)  # (batch_size, out_features)
+            # Expand for broadcasting: (n_agents, batch_size, 1)
+            alpha_i_expanded = alpha_i.unsqueeze(-1)  # (n_agents, batch_size, 1)
+            # Multiply and sum over neighbors (dim=0): (batch_size, out_features)
+            h_weighted = torch.sum(alpha_i_expanded * h, dim=0)  # (batch_size, out_features)
             h_updated.append(h_weighted)
         
-        h_updated = torch.stack(h_updated, dim=0)  # (n_agents, batch_size, out_features)
+        # Stack: (n_agents, batch_size, out_features)
+        h_updated = torch.stack(h_updated, dim=0)
         
         # Apply non-linearity (LeakyReLU as in paper)
         h_updated = F.leaky_relu(h_updated, negative_slope=self.alpha)
@@ -142,6 +151,7 @@ class GraphAttentionNetwork(NeuralNet):
             for layer in self.layers:
                 z_current, attn_weights = layer(z_current, adj_mask)
                 all_attention_weights.append(attn_weights)
+            # After each step, z_current should maintain shape (n_agents, batch_size, embedding_dim)
         
         return z_current, all_attention_weights
 
@@ -173,10 +183,12 @@ def build_knn_adjacency_mask(n_agents, k=2, similarity_matrix=None):
         for i in range(n_agents):
             # Include self
             adj_mask[i, i] = 1.0
-            # Include k-1 nearest neighbors (circular)
-            for offset in range(1, k):
+            # Include k-1 additional nearest neighbors (circular, one direction)
+            # For k=2: self + 1 neighbor = 2 total
+            # For k=3: self + 2 neighbors = 3 total
+            neighbors_to_add = k - 1
+            for offset in range(1, neighbors_to_add + 1):
                 adj_mask[i, (i + offset) % n_agents] = 1.0
-                adj_mask[i, (i - offset) % n_agents] = 1.0
     
     return adj_mask
 
